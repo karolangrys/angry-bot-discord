@@ -1,0 +1,32 @@
+{
+  "name": "angry-bot-discord",
+  "version": "1.0.0",
+  "description": "Discord bot with Bun, TS, Discord.js and SQLite (Vertical Slice)",
+  "main": "src/core/index.ts",
+  "scripts": {
+    "dev": "bun --watch run src/core/index.ts",
+    "start": "bun run src/core/index.ts",
+    "deploy-commands": "bun run src/core/deploy-commands.ts",
+    "test": "bun test",
+    "lint": "prettier --check .",
+    "format": "prettier --write .",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "discord.js": "^14.15.3",
+    "drizzle-orm": "^0.32.1",
+    "i18next": "^26.3.6",
+    "winston": "^3.13.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@libsql/client": "^0.17.4",
+    "@types/bun": "latest",
+    "dotenv": "^17.4.2",
+    "drizzle-kit": "^0.23.0",
+    "prettier": "^3.9.6",
+    "typescript": "^5.5.3"
+  }
+}
