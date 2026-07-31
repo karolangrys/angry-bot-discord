@@ -1,74 +1,104 @@
-import { SlashCommandBuilder, ChatInputCommandInteraction } from 'discord.js';
-import { getT, SUPPORTED_LOCALES } from '../../core/i18n';
-import locales from './locales';
+import {
+  InteractionContextType,
+  MessageFlags,
+  PermissionFlagsBits,
+  SlashCommandBuilder,
+  type ChatInputCommandInteraction,
+} from 'discord.js';
 import { db } from '../../core/db/db-client';
 import { guildConfigs } from '../../core/db/schema';
+import { getT, invalidateGuildLanguage, isSupportedLocale } from '../../core/i18n';
 import { logger } from '../../core/logger';
+import locales, { LANGUAGE_CHOICES, NAMESPACE } from './locales';
+
+const LANGUAGE_SUBCOMMAND = locales['en-US'].language.name;
+const LANGUAGE_OPTION = locales['en-US'].language.lang_option;
 
 export const data = new SlashCommandBuilder()
   .setName(locales['en-US'].name)
   .setDescription(locales['en-US'].description)
   .setDescriptionLocalizations({
-    pl: locales['pl'].description,
+    pl: locales.pl.description,
   })
-  .setDefaultMemberPermissions(0) // Require explicit permissions
+  .setDefaultMemberPermissions(0) // Require explicit permissions.
+  // Everything here writes per-guild configuration, so there is nothing to do in a DM.
+  .setContexts(InteractionContextType.Guild)
   .addSubcommand((subcommand) =>
     subcommand
-      .setName(locales['en-US'].language.name)
+      .setName(LANGUAGE_SUBCOMMAND)
       .setDescription(locales['en-US'].language.description)
       .setNameLocalizations({
-        pl: locales['pl'].language.name,
+        pl: locales.pl.language.name,
       })
       .setDescriptionLocalizations({
-        pl: locales['pl'].language.description,
+        pl: locales.pl.language.description,
       })
       .addStringOption((option) =>
         option
-          .setName(locales['en-US'].language.lang_option)
+          .setName(LANGUAGE_OPTION)
           .setDescription(locales['en-US'].language.lang_desc)
           .setNameLocalizations({
-            pl: locales['pl'].language.lang_option,
+            pl: locales.pl.language.lang_option,
           })
           .setDescriptionLocalizations({
-            pl: locales['pl'].language.lang_desc,
+            pl: locales.pl.language.lang_desc,
           })
           .setRequired(true)
-          .addChoices(
-            { name: 'English (US)', value: 'en-US' },
-            { name: 'Polski', value: 'pl' }
-          )
-      )
+          .addChoices(...LANGUAGE_CHOICES),
+      ),
   );
 
-export const execute = async (interaction: ChatInputCommandInteraction) => {
-  const t = await getT(interaction, 'config');
+export const execute = async (interaction: ChatInputCommandInteraction): Promise<void> => {
+  const t = await getT(interaction, NAMESPACE);
 
-  if (!interaction.memberPermissions?.has('ManageGuild')) {
-    await interaction.reply({ content: t('no_permission'), ephemeral: true });
+  // `setContexts` already blocks DMs, but the guard also narrows guildId/memberPermissions so the
+  // code below needs no non-null assertions.
+  if (!interaction.inGuild()) {
+    await interaction.reply({ content: t('guild_only'), flags: MessageFlags.Ephemeral });
     return;
   }
 
-  const lang = interaction.options.getString(locales['en-US'].language.lang_option, true);
+  if (!interaction.memberPermissions.has(PermissionFlagsBits.ManageGuild)) {
+    await interaction.reply({ content: t('no_permission'), flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const subcommand = interaction.options.getSubcommand();
+  if (subcommand !== LANGUAGE_SUBCOMMAND) {
+    // Without this branch, a subcommand added later would silently fall through to the language logic.
+    logger.warn(`Unhandled /${locales['en-US'].name} subcommand: ${subcommand}`);
+    await interaction.reply({ content: t('error'), flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const language = interaction.options.getString(LANGUAGE_OPTION, true);
+  if (!isSupportedLocale(language)) {
+    logger.warn(`Rejected unsupported language "${language}" for guild ${interaction.guildId}.`);
+    await interaction.reply({ content: t('error'), flags: MessageFlags.Ephemeral });
+    return;
+  }
 
   try {
-    // Insert or update guild config
     await db
       .insert(guildConfigs)
-      .values({ guildId: interaction.guildId!, language: lang })
+      .values({ guildId: interaction.guildId, language })
       .onConflictDoUpdate({
         target: guildConfigs.guildId,
-        set: { language: lang },
+        set: { language },
       });
 
-    // Re-fetch translations with new language for the response
-    const newT = await getT({ ...interaction, guildId: interaction.guildId } as any, 'config');
-    // Actually, getT fetches from DB, so we can just call it again
-    const updatedT = await getT(interaction, 'config'); 
-    // Wait, getT fetches from DB, so it will get the newly updated language!
-
-    await interaction.reply({ content: updatedT('success', { lang }), ephemeral: true });
+    // The resolved language is cached per guild; without this the old value would keep being served.
+    invalidateGuildLanguage(interaction.guildId);
   } catch (error) {
-    logger.error(`Error saving config: ${error}`);
-    await interaction.reply({ content: t('error'), ephemeral: true });
+    logger.error('Error saving the guild configuration:', error);
+    await interaction.reply({ content: t('error'), flags: MessageFlags.Ephemeral });
+    return;
   }
+
+  // Re-resolve so the confirmation is rendered in the language that was just selected.
+  const updatedT = await getT(interaction, NAMESPACE);
+  await interaction.reply({
+    content: updatedT('success', { lang: language }),
+    flags: MessageFlags.Ephemeral,
+  });
 };

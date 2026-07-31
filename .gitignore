@@ -2,7 +2,13 @@ node_modules/
 .env
 dist/
 build/
+*.tsbuildinfo
 *.db
 *.db-journal
+# Created by the WAL journal mode enabled in src/core/db/db-client.ts.
+*.db-wal
+*.db-shm
 logs/
+# Bind-mount target used by docker-compose.
+data/
 .bun/

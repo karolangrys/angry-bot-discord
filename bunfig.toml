@@ -1,0 +1,3 @@
+[test]
+# Sets up dummy credentials, an in-memory database and real translations before any test runs.
+preload = ["./src/test-setup.ts"]

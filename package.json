@@ -8,8 +8,10 @@
     "start": "bun run src/core/index.ts",
     "deploy-commands": "bun run src/core/deploy-commands.ts",
     "test": "bun test",
+    "typecheck": "tsc --noEmit",
     "lint": "prettier --check .",
     "format": "prettier --write .",
+    "verify": "bun run lint && bun run typecheck && bun test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio"

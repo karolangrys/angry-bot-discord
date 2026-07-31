@@ -1,65 +1,105 @@
-import { Client, Collection, GatewayIntentBits, Events } from 'discord.js';
-import { logger } from './logger';
-import { loadCommands, Command } from './command-handler';
+import {
+  Client,
+  Collection,
+  Events,
+  GatewayIntentBits,
+  MessageFlags,
+  type ChatInputCommandInteraction,
+} from 'discord.js';
+import { loadCommands, type Command } from './command-handler';
 import { env } from './env-config';
+import { getT } from './i18n';
+import { NAMESPACE as CORE_NAMESPACE } from './locales';
+import { logger } from './logger';
+
+type CoreErrorKey = 'command_error' | 'command_unknown';
 
 export class DiscordBot {
-  public client: Client;
+  public readonly client: Client;
   public commands: Collection<string, Command>;
 
   constructor() {
     this.client = new Client({
-      intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-      ],
+      // Only what is actually used. GuildMessages/MessageContent were never read, and
+      // MessageContent is a privileged intent that blocks login unless it is enabled in the
+      // Discord Developer Portal.
+      intents: [GatewayIntentBits.Guilds],
     });
     this.commands = new Collection();
   }
 
-  public async start() {
+  /** Throws on failure; the caller decides how to shut down. */
+  public async start(): Promise<void> {
+    this.commands = await loadCommands();
     this.registerEvents();
 
-    // Load all commands from features
-    this.commands = await loadCommands();
-
-    try {
-      await this.client.login(env.DISCORD_TOKEN);
-      logger.info('Bot is connecting...');
-    } catch (error) {
-      logger.error(`Failed to login: ${error}`);
-      process.exit(1);
-    }
+    logger.info('Bot is connecting...');
+    await this.client.login(env.DISCORD_TOKEN);
   }
 
-  private registerEvents() {
-    this.client.once(Events.ClientReady, () => {
-      logger.info(`Logged in as ${this.client.user?.tag}!`);
+  public async stop(): Promise<void> {
+    await this.client.destroy();
+  }
+
+  private registerEvents(): void {
+    this.client.once(Events.ClientReady, (client) => {
+      logger.info(`Logged in as ${client.user.tag} — ${this.commands.size} command(s) ready.`);
+      void this.runReadyHooks(client);
     });
 
     this.client.on(Events.InteractionCreate, async (interaction) => {
-      if (!interaction.isChatInputCommand()) return;
+      if (!interaction.isChatInputCommand()) {
+        return;
+      }
 
       const command = this.commands.get(interaction.commandName);
 
       if (!command) {
+        // Usually a stale registration: the command was removed but Discord still shows it.
         logger.warn(`No command matching ${interaction.commandName} was found.`);
+        await this.replyWithError(interaction, 'command_unknown');
         return;
       }
 
       try {
         await command.execute(interaction);
       } catch (error) {
-        logger.error(`Error executing command ${interaction.commandName}: ${error}`);
-
-        const errorMessage = 'Wystąpił błąd podczas wykonywania tej komendy!';
-        if (interaction.replied || interaction.deferred) {
-          await interaction.followUp({ content: errorMessage, ephemeral: true });
-        } else {
-          await interaction.reply({ content: errorMessage, ephemeral: true });
-        }
+        logger.error(`Error executing command ${interaction.commandName}:`, error);
+        await this.replyWithError(interaction, 'command_error');
       }
     });
+  }
+
+  private async runReadyHooks(client: Client<true>): Promise<void> {
+    for (const [name, command] of this.commands) {
+      if (!command.onReady) {
+        continue;
+      }
+      try {
+        await command.onReady(client);
+      } catch (error) {
+        logger.error(`The onReady hook of command ${name} failed:`, error);
+      }
+    }
+  }
+
+  private async replyWithError(
+    interaction: ChatInputCommandInteraction,
+    key: CoreErrorKey,
+  ): Promise<void> {
+    try {
+      const t = await getT(interaction, CORE_NAMESPACE);
+      const payload = { content: t(key), flags: MessageFlags.Ephemeral } as const;
+
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp(payload);
+      } else {
+        await interaction.reply(payload);
+      }
+    } catch (error) {
+      // This runs inside an async event handler, so an unguarded throw here becomes an unhandled
+      // rejection. Expired interaction tokens (error 10062 Unknown interaction) are common.
+      logger.error('Could not deliver the error message to the user:', error);
+    }
   }
 }

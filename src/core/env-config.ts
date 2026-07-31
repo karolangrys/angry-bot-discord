@@ -3,8 +3,23 @@ import { z } from 'zod';
 const envSchema = z.object({
   DISCORD_TOKEN: z.string().min(1, 'Discord token is required'),
   CLIENT_ID: z.string().min(1, 'Client ID is required'),
+  /** When set, slash commands are registered for this guild only (updates are instant). */
   TEST_GUILD_ID: z.string().optional(),
-  DATABASE_URL: z.string().default('sqlite.db'),
+  /**
+   * Comma-separated Discord user IDs allowed to run process-wide commands such as `/status`.
+   * When empty, the application owner reported by Discord is used instead.
+   */
+  OWNER_IDS: z
+    .string()
+    .optional()
+    .transform((value) =>
+      (value ?? '')
+        .split(',')
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0),
+    ),
+  DATABASE_URL: z.string().min(1).default('sqlite.db'),
+  LOG_DIR: z.string().min(1).default('logs'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 });
 
@@ -12,6 +27,8 @@ const parseEnv = () => {
   const parsed = envSchema.safeParse(process.env);
 
   if (!parsed.success) {
+    // `console.error` is deliberate here: logger.ts imports this module, so reaching for the
+    // Winston logger would create an import cycle. Do not "fix" this to use the logger.
     console.error('Invalid environment variables:', parsed.error.format());
     process.exit(1);
   }
@@ -19,4 +36,5 @@ const parseEnv = () => {
   return parsed.data;
 };
 
+/** Validated at import time so a misconfigured deployment fails immediately, not mid-request. */
 export const env = parseEnv();

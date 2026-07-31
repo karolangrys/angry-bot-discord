@@ -2,21 +2,55 @@ name: Build and Deploy
 
 on:
   push:
+    branches: [main]
     tags:
       - 'v*'
+  pull_request:
   workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  # Nothing used to run before publishing and deploying: no tests, no lint, no typecheck.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check formatting
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Run tests
+        run: bun test
+
   build-and-push-image:
+    needs: verify
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -33,6 +67,14 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # An explicit list instead of the defaults, so the deploy job below can address the exact
+          # image it just built. `latest` alone was ambiguous: a workflow_dispatch run publishes no
+          # `latest` tag, so the deployment silently pulled the previous release.
+          tags: |
+            type=semver,pattern={{version}}
+            type=ref,event=branch
+            type=sha,format=long
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -41,30 +83,18 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   deploy:
     needs: build-and-push-image
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-
+    # Lets the repository require a manual approval before anything touches the VPS.
+    environment: production
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Prepare docker-compose
-        run: |
-          # Convert owner to lowercase for Docker registry requirements
-          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          sed -i "s/\${GITHUB_REPOSITORY_OWNER}/$OWNER/g" docker-compose.yml
-
-      - name: Ensure target directory exists on VPS
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          port: ${{ secrets.VPS_SSH_PORT || 22 }}
-          username: ${{ secrets.VPS_USERNAME }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          script: |
-            mkdir -p ${{ secrets.VPS_TARGET_PATH }}
 
       - name: Copy docker-compose.yml to VPS
         uses: appleboy/scp-action@v0.1.7
@@ -73,22 +103,46 @@ jobs:
           port: ${{ secrets.VPS_SSH_PORT || 22 }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: "docker-compose.yml"
-          target: "${{ secrets.VPS_TARGET_PATH }}"
+          source: 'docker-compose.yml'
+          target: ${{ secrets.VPS_TARGET_PATH }}
 
       - name: Deploy to VPS via SSH
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          # Lowercase: GHCR rejects uppercase namespaces, and GitHub owners may contain capitals.
+          IMAGE_OWNER: ${{ github.repository_owner }}
+          # The immutable per-commit tag, so a deploy can never pick up a stale image.
+          IMAGE_TAG: sha-${{ github.sha }}
+          TARGET_PATH: ${{ secrets.VPS_TARGET_PATH }}
         with:
           host: ${{ secrets.VPS_HOST }}
           port: ${{ secrets.VPS_SSH_PORT || 22 }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          envs: IMAGE_OWNER,IMAGE_TAG,TARGET_PATH
           script: |
-            # Navigate to the target directory specified in GitHub Secrets
-            cd ${{ secrets.VPS_TARGET_PATH }}
+            set -eu
+            export IMAGE_OWNER="$(printf '%s' "$IMAGE_OWNER" | tr '[:upper:]' '[:lower:]')"
+            export IMAGE_TAG
 
-            # Pull the latest image from GHCR
-            docker-compose pull
+            mkdir -p "$TARGET_PATH"
+            cd "$TARGET_PATH"
 
-            # Restart the container by applying the new image
-            docker-compose up -d
+            if [ ! -f .env ]; then
+              echo "Missing $TARGET_PATH/.env with DISCORD_TOKEN and CLIENT_ID." >&2
+              exit 1
+            fi
+
+            # The container runs as uid 1000 (`bun`) and writes the database and the log files.
+            mkdir -p data logs
+            chown -R 1000:1000 data logs 2>/dev/null \
+              || echo "Warning: could not chown data/ and logs/ - make sure uid 1000 can write them."
+
+            docker compose pull
+
+            # Register new or changed slash commands. This step did not exist before, so command
+            # definitions never reached Discord in production.
+            docker compose run --rm --no-deps discord-bot bun run deploy-commands
+
+            docker compose up -d
+            docker compose ps

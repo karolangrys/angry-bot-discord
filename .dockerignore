@@ -1,0 +1,31 @@
+# Without this file `COPY . .` baked the local .env — including the real DISCORD_TOKEN — into the
+# image published to GHCR.
+.env
+.env.*
+!.env.example
+
+.git
+.gitattributes
+.gitignore
+.github
+.vscode
+
+node_modules
+logs
+data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Not needed at runtime.
+**/*.test.ts
+src/test-setup.ts
+src/test-support.ts
+README.md
+ai-instructions.md
+docker-compose.yml
+Dockerfile
+.dockerignore
+.prettierrc
+.prettierignore

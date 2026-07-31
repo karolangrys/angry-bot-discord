@@ -1,14 +1,27 @@
-version: '3.8'
-
+# Deployment file. `build:` is deliberately absent: only this file is copied to the VPS, so there is
+# no build context there and `docker compose up` must never try to build.
+#
+# IMAGE_OWNER (required) and IMAGE_TAG (optional, defaults to latest) are read from the shell or from
+# the `.env` file next to this one.
 services:
   discord-bot:
-    image: ghcr.io/${GITHUB_REPOSITORY_OWNER}/angry-bot-discord:latest
-    build: .
+    image: ghcr.io/${IMAGE_OWNER:?set IMAGE_OWNER to your lowercase GitHub owner}/angry-bot-discord:${IMAGE_TAG:-latest}
     container_name: angry-bot-discord
-    restart: always
+    restart: unless-stopped
     env_file:
       - .env
-    volumes:
-      - ./data:/app/data
     environment:
-      - DATABASE_URL=data/sqlite.db
+      DATABASE_URL: data/sqlite.db
+      LOG_DIR: logs
+      NODE_ENV: production
+    volumes:
+      # Both directories must be writable by uid 1000 (the `bun` user inside the container).
+      - ./data:/app/data
+      - ./logs:/app/logs
+    # Give the graceful shutdown in src/core/index.ts time to close SQLite cleanly.
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'

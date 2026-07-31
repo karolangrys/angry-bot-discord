@@ -1,45 +1,50 @@
-import { expect, test, describe, mock } from 'bun:test';
-import { execute, data } from './server-info.command';
-import { ChatInputCommandInteraction } from 'discord.js';
+import { describe, expect, test } from 'bun:test';
+import { MessageFlags } from 'discord.js';
+import { contentOf, createInteraction, flagsOf } from '../../test-support';
+import { data, execute } from './server-info.command';
 
-mock.module('../../core/i18n', () => ({
-  getT: async () => (key: string, vars: any) => `${key} ${JSON.stringify(vars || {})}`,
-}));
+const guild = {
+  name: 'Test Server',
+  memberCount: 42,
+  createdAt: new Date('2023-01-01T00:00:00.000Z'),
+  ownerId: '123456789',
+};
 
-describe('Server Info Command', () => {
-  test('has correct data', () => {
+describe('/server-info', () => {
+  test('exposes localized command metadata and is guild-only', () => {
     expect(data.name).toBe('server-info');
+    // InteractionContextType.Guild === 0
+    expect(data.toJSON().contexts).toEqual([0]);
   });
 
-  test('replies with server info if in a guild', async () => {
-    const replyMock = mock(async () => {});
-    
-    const interaction = {
-      guild: {
-        name: 'Test Server',
-        memberCount: 42,
-        createdAt: new Date('2023-01-01'),
-        ownerId: '123456789',
-      },
-      reply: replyMock,
-    } as unknown as ChatInputCommandInteraction;
+  test('renders every field of the response', async () => {
+    const { interaction, reply } = createInteraction({ guild });
 
     await execute(interaction);
 
-    expect(replyMock).toHaveBeenCalled();
-    // Verification logic depends on what getT mock returns
+    const message = contentOf(reply.mock.calls[0]?.[0]);
+    expect(message).toContain('Test Server');
+    expect(message).toContain('42');
+    // A Discord timestamp, so each viewer sees their own locale and timezone.
+    expect(message).toContain(`<t:${Math.floor(guild.createdAt.getTime() / 1000)}:D>`);
+    expect(message).toContain('<@123456789>');
+    expect(message).not.toContain('response');
   });
 
-  test('replies with error if not in a guild', async () => {
-    const replyMock = mock(async () => {});
-    
-    const interaction = {
-      guild: null,
-      reply: replyMock,
-    } as unknown as ChatInputCommandInteraction;
+  test('translates the response', async () => {
+    const { interaction, reply } = createInteraction({ guild, locale: 'pl' });
 
     await execute(interaction);
 
-    expect(replyMock).toHaveBeenCalledWith({ content: 'not_in_guild {}', ephemeral: true });
+    expect(contentOf(reply.mock.calls[0]?.[0])).toContain('Liczba członków');
+  });
+
+  test('replies ephemerally when there is no guild', async () => {
+    const { interaction, reply } = createInteraction({ guild: null });
+
+    await execute(interaction);
+
+    expect(contentOf(reply.mock.calls[0]?.[0])).toContain('only be used on a server');
+    expect(flagsOf(reply.mock.calls[0]?.[0])).toBe(MessageFlags.Ephemeral);
   });
 });

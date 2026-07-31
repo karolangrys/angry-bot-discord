@@ -1,23 +1,55 @@
 import { DiscordBot } from './bot';
-import { logger } from './logger';
+import { closeDb } from './db/db-client';
+import { runMigrations } from './db/migrate';
 import { initI18n } from './i18n';
+import { flushLogs, logger } from './logger';
 
 const bot = new DiscordBot();
+let shuttingDown = false;
 
-process.on('unhandledRejection', (error) => {
-  logger.error('Unhandled promise rejection:', error);
-});
+async function shutdown(code: number, reason: string): Promise<never> {
+  if (shuttingDown) {
+    // A second signal means someone is impatient — leave right away.
+    process.exit(code);
+  }
+  shuttingDown = true;
+  logger.info(`Shutting down (${reason})...`);
 
-process.on('uncaughtException', (error) => {
-  logger.error('Uncaught exception:', error);
-});
+  try {
+    await bot.stop();
+    closeDb();
+  } catch (error) {
+    logger.error('Error while shutting down:', error);
+  }
 
-async function main() {
-  await initI18n();
-  bot.start().catch((error) => {
-    logger.error('Fatal error during startup:', error);
-    process.exit(1);
-  });
+  await flushLogs();
+  process.exit(code);
 }
 
-main();
+// Docker sends SIGTERM on `stop`/`up -d`; without this the process dies mid-write to SQLite.
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(signal, () => void shutdown(0, signal));
+}
+
+// Both of these leave the process in an undefined state, so restarting is safer than continuing.
+// `restart: unless-stopped` in docker-compose brings the bot back up.
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught exception:', error);
+  void shutdown(1, 'uncaughtException');
+});
+
+process.on('unhandledRejection', (reason) => {
+  logger.error('Unhandled promise rejection:', reason);
+  void shutdown(1, 'unhandledRejection');
+});
+
+async function main(): Promise<void> {
+  runMigrations();
+  await initI18n();
+  await bot.start();
+}
+
+main().catch(async (error) => {
+  logger.error('Fatal error during startup:', error);
+  await shutdown(1, 'startup failure');
+});

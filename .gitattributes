@@ -1,0 +1,8 @@
+# Normalise line endings. Without this, `core.autocrlf=true` on Windows gives every file CRLF in the
+# working tree while Prettier's default `endOfLine: "lf"` rejects it — making `bun run lint` fail on
+# all files at once and hiding real formatting problems.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary

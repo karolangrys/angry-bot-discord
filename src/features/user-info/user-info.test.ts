@@ -1,34 +1,58 @@
-import { expect, test, describe, mock } from 'bun:test';
-import { execute, data } from './user-info.command';
-import { ChatInputCommandInteraction, User } from 'discord.js';
+import { describe, expect, test } from 'bun:test';
+import { contentOf, createInteraction } from '../../test-support';
+import { data, execute } from './user-info.command';
 
-mock.module('../../core/i18n', () => ({
-  getT: async () => (key: string, vars: any) => `${key} ${JSON.stringify(vars || {})}`,
-}));
+const targetUser = {
+  id: '987654321',
+  username: 'testuser',
+  displayName: 'Test User',
+  createdAt: new Date('2023-01-01T00:00:00.000Z'),
+};
 
-describe('User Info Command', () => {
-  test('has correct data', () => {
+describe('/user-info', () => {
+  test('exposes localized command metadata with an optional target', () => {
     expect(data.name).toBe('user-info');
+    const option = data.toJSON().options?.[0];
+    expect(option?.name).toBe('target');
+    expect(option?.required).toBeFalsy();
   });
 
-  test('replies with user info', async () => {
-    const replyMock = mock(async () => {});
-
-    const targetUser = {
-      tag: 'TestUser#1234',
-      id: '987654321',
-      createdAt: new Date('2023-01-01'),
-    } as User;
-
-    const interaction = {
-      options: {
-        getUser: () => targetUser,
-      },
-      reply: replyMock,
-    } as unknown as ChatInputCommandInteraction;
+  test('renders the requested user', async () => {
+    const { interaction, reply } = createInteraction({
+      options: { getUser: () => targetUser },
+    });
 
     await execute(interaction);
 
-    expect(replyMock).toHaveBeenCalled();
+    const message = contentOf(reply.mock.calls[0]?.[0]);
+    expect(message).toContain('Test User');
+    expect(message).toContain('testuser');
+    expect(message).toContain('987654321');
+    expect(message).toContain(`<t:${Math.floor(targetUser.createdAt.getTime() / 1000)}:D>`);
+    expect(message).not.toContain('response');
+  });
+
+  test('falls back to the caller when no target is given', async () => {
+    const { interaction, reply } = createInteraction({
+      options: { getUser: () => null },
+    });
+
+    await execute(interaction);
+
+    const message = contentOf(reply.mock.calls[0]?.[0]);
+    // `createInteraction` defaults to the "Tester" user.
+    expect(message).toContain('Tester');
+    expect(message).toContain('tester');
+  });
+
+  test('translates the response', async () => {
+    const { interaction, reply } = createInteraction({
+      locale: 'pl',
+      options: { getUser: () => targetUser },
+    });
+
+    await execute(interaction);
+
+    expect(contentOf(reply.mock.calls[0]?.[0])).toContain('Dołączył do Discorda');
   });
 });

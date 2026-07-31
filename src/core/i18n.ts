@@ -1,67 +1,131 @@
-import i18next, { Resource } from 'i18next';
-import { ChatInputCommandInteraction } from 'discord.js';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import type { ChatInputCommandInteraction } from 'discord.js';
+import { eq } from 'drizzle-orm';
+import i18next, { type Resource } from 'i18next';
+import { FEATURES_PATH, listFeatureFolders } from './command-handler';
 import { db } from './db/db-client';
 import { guildConfigs } from './db/schema';
-import { eq } from 'drizzle-orm';
+import {
+  DEFAULT_LOCALE,
+  isSupportedLocale,
+  SUPPORTED_LOCALES,
+  type SupportedLocale,
+} from './i18n-config';
+import coreLocales, { NAMESPACE as CORE_NAMESPACE } from './locales';
 import { logger } from './logger';
-import { readdirSync } from 'fs';
-import { join } from 'path';
 
-export const SUPPORTED_LOCALES = ['en-US', 'pl'] as const;
-export type SupportedLocale = typeof SUPPORTED_LOCALES[number];
+export { DEFAULT_LOCALE, isSupportedLocale, SUPPORTED_LOCALES };
+export type { SupportedLocale };
 
-// Central initialization
-export async function initI18n() {
+type LocaleModule = {
+  default?: Record<string, Record<string, unknown>>;
+  NAMESPACE?: string;
+};
+
+function addBundle(
+  resources: Resource,
+  namespace: string,
+  bundle: Record<string, Record<string, unknown>>,
+): void {
+  for (const [language, strings] of Object.entries(bundle)) {
+    const forLanguage = (resources[language] ??= {});
+    forLanguage[namespace] = strings;
+  }
+}
+
+export async function initI18n(): Promise<void> {
   const resources: Resource = {};
-  
-  const featuresPath = join(process.cwd(), 'src', 'features');
-  try {
-    const featureFolders = readdirSync(featuresPath);
-    
-    for (const folder of featureFolders) {
-      const featurePath = join(featuresPath, folder);
-      const files = readdirSync(featurePath);
-      
-      if (files.includes('locales.ts')) {
-        const localesModule = await import(join(featurePath, 'locales.ts'));
-        const namespaceLocales = localesModule.default;
-        
-        // namespaceLocales should be like { 'en-US': { name: '...', ... }, 'pl': { ... } }
-        for (const lng of Object.keys(namespaceLocales)) {
-          if (!resources[lng]) {
-            resources[lng] = {};
-          }
-          resources[lng][folder] = namespaceLocales[lng];
-        }
-      }
+  addBundle(resources, CORE_NAMESPACE, coreLocales);
+
+  for (const folder of listFeatureFolders()) {
+    const localesPath = join(FEATURES_PATH, folder, 'locales.ts');
+    if (!existsSync(localesPath)) {
+      continue;
     }
-  } catch (error) {
-    logger.error(`Error loading locales: ${error}`);
+
+    try {
+      const localeModule = (await import(pathToFileURL(localesPath).href)) as LocaleModule;
+      if (!localeModule.default) {
+        logger.warn(`Feature ${folder} has a locales.ts without a default export; skipping.`);
+        continue;
+      }
+
+      // The namespace comes from the module itself, not from the folder name. Deriving it from the
+      // folder silently broke `admin-status`, whose command asked for the namespace "status".
+      const namespace = localeModule.NAMESPACE ?? folder;
+      addBundle(resources, namespace, localeModule.default);
+      logger.debug(`Loaded locales for namespace ${namespace} from feature ${folder}.`);
+    } catch (error) {
+      // Scoped per feature so one bad locales file does not leave the bot untranslated.
+      logger.error(`Failed to load locales for feature ${folder}:`, error);
+    }
   }
 
   await i18next.init({
-    fallbackLng: 'en-US',
+    fallbackLng: DEFAULT_LOCALE,
+    supportedLngs: [...SUPPORTED_LOCALES],
+    defaultNS: CORE_NAMESPACE,
+    ns: Object.keys(resources[DEFAULT_LOCALE] ?? {}),
     resources,
     interpolation: {
-      escapeValue: false, // not needed for discord
+      escapeValue: false, // Discord renders plain text, not HTML.
     },
   });
 }
 
-export async function getT(interaction: ChatInputCommandInteraction, namespace: string) {
-  let lng = interaction.locale as string;
+/**
+ * Guild language cache. Without it every single interaction cost a database round trip.
+ * `null` means "no override stored", which is a valid cacheable answer.
+ */
+const guildLanguageCache = new Map<string, SupportedLocale | null>();
 
-  if (interaction.guildId) {
-    const guildConfig = await db.select().from(guildConfigs).where(eq(guildConfigs.guildId, interaction.guildId)).get();
-    if (guildConfig && guildConfig.language) {
-      lng = guildConfig.language;
+/** Must be called after writing `guild_configs.language`, otherwise the old value is served. */
+export function invalidateGuildLanguage(guildId: string): void {
+  guildLanguageCache.delete(guildId);
+}
+
+/** Test helper: drops every cached entry. */
+export function clearGuildLanguageCache(): void {
+  guildLanguageCache.clear();
+}
+
+async function resolveGuildLanguage(guildId: string): Promise<SupportedLocale | null> {
+  const cached = guildLanguageCache.get(guildId);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  let language: SupportedLocale | null = null;
+  try {
+    const config = await db
+      .select({ language: guildConfigs.language })
+      .from(guildConfigs)
+      .where(eq(guildConfigs.guildId, guildId))
+      .get();
+
+    if (isSupportedLocale(config?.language)) {
+      language = config.language;
     }
+  } catch (error) {
+    // Looking up a translation must never take a command down; fall back to the client locale.
+    logger.error(`Could not read the language setting for guild ${guildId}:`, error);
+    return null; // Deliberately not cached, so the next call retries.
   }
 
-  // Fallback to english if language is not supported
-  if (!SUPPORTED_LOCALES.includes(lng as SupportedLocale)) {
-    lng = 'en-US';
-  }
+  guildLanguageCache.set(guildId, language);
+  return language;
+}
 
-  return i18next.getFixedT(lng, namespace);
+export async function getT(interaction: ChatInputCommandInteraction, namespace: string) {
+  const guildLanguage = interaction.guildId
+    ? await resolveGuildLanguage(interaction.guildId)
+    : null;
+
+  const clientLocale: string | undefined = interaction.locale;
+  const language =
+    guildLanguage ?? (isSupportedLocale(clientLocale) ? clientLocale : DEFAULT_LOCALE);
+
+  return i18next.getFixedT(language, namespace);
 }
