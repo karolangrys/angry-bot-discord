@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { inspect } from 'node:util';
 import winston from 'winston';
 import { env } from './env-config';
 
@@ -18,7 +19,7 @@ function describe(value: unknown): string {
   try {
     return JSON.stringify(value) ?? String(value);
   } catch {
-    return String(value);
+    return inspect(value, { depth: 3, breakLength: Infinity });
   }
 }
 

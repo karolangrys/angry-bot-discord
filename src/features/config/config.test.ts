@@ -124,8 +124,6 @@ describe('/config', () => {
       .get();
 
     expect(stored?.language).toBe('pl');
-    // The default from the schema must survive the upsert.
-    expect(stored?.prefix).toBe('!');
     expect(contentOf(reply.mock.calls[0]?.[0])).toContain('Pomyślnie zmieniono język');
   });
 });

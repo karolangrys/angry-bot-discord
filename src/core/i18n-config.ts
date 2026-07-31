@@ -1,6 +1,9 @@
 /**
  * Locale primitives kept in a dependency-free module so that feature `locales.ts` files can
  * import the type contract without pulling in i18next, the database or the logger.
+ *
+ * IMPORTANT: When adding a new language, add it here AND in `locales.ts`. The i18n test suite
+ * verifies that every locale defined in `locales.ts` is listed here, so a mismatch is caught in CI.
  */
 
 export const SUPPORTED_LOCALES = ['en-US', 'pl'] as const;
@@ -19,3 +22,4 @@ export function isSupportedLocale(value: string | null | undefined): value is Su
  * key that no other locale has.
  */
 export type LocaleBundle<TStrings> = Record<SupportedLocale, TStrings>;
+

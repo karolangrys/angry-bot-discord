@@ -7,6 +7,8 @@ import { flushLogs, logger } from './logger';
 const bot = new DiscordBot();
 let shuttingDown = false;
 
+const SHUTDOWN_TIMEOUT_MS = 10_000;
+
 async function shutdown(code: number, reason: string): Promise<never> {
   if (shuttingDown) {
     // A second signal means someone is impatient — leave right away.
@@ -16,8 +18,14 @@ async function shutdown(code: number, reason: string): Promise<never> {
   logger.info(`Shutting down (${reason})...`);
 
   try {
-    await bot.stop();
-    closeDb();
+    const cleanup = async () => {
+      await bot.stop();
+      closeDb();
+    };
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Shutdown timed out')), SHUTDOWN_TIMEOUT_MS),
+    );
+    await Promise.race([cleanup(), timeout]);
   } catch (error) {
     logger.error('Error while shutting down:', error);
   }

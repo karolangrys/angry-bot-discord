@@ -2,9 +2,9 @@ import {
   InteractionContextType,
   MessageFlags,
   PermissionFlagsBits,
-  SlashCommandBuilder,
   type ChatInputCommandInteraction,
 } from 'discord.js';
+import { createLocalizedCommand } from '../../core/command-builder';
 import { db } from '../../core/db/db-client';
 import { guildConfigs } from '../../core/db/schema';
 import { getT, invalidateGuildLanguage, isSupportedLocale } from '../../core/i18n';
@@ -14,12 +14,7 @@ import locales, { LANGUAGE_CHOICES, NAMESPACE } from './locales';
 const LANGUAGE_SUBCOMMAND = locales['en-US'].language.name;
 const LANGUAGE_OPTION = locales['en-US'].language.lang_option;
 
-export const data = new SlashCommandBuilder()
-  .setName(locales['en-US'].name)
-  .setDescription(locales['en-US'].description)
-  .setDescriptionLocalizations({
-    pl: locales.pl.description,
-  })
+export const data = createLocalizedCommand(locales)
   .setDefaultMemberPermissions(0) // Require explicit permissions.
   // Everything here writes per-guild configuration, so there is nothing to do in a DM.
   .setContexts(InteractionContextType.Guild)
@@ -58,7 +53,7 @@ export const execute = async (interaction: ChatInputCommandInteraction): Promise
     return;
   }
 
-  if (!interaction.memberPermissions.has(PermissionFlagsBits.ManageGuild)) {
+  if (!interaction.memberPermissions?.has?.(PermissionFlagsBits.ManageGuild)) {
     await interaction.reply({ content: t('no_permission'), flags: MessageFlags.Ephemeral });
     return;
   }

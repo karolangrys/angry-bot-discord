@@ -1,4 +1,5 @@
-import { MessageFlags, SlashCommandBuilder, type ChatInputCommandInteraction } from 'discord.js';
+import { MessageFlags, type ChatInputCommandInteraction } from 'discord.js';
+import { createLocalizedCommand } from '../../core/command-builder';
 import { getT } from '../../core/i18n';
 import { logger } from '../../core/logger';
 import { isBotOwner } from '../../core/permissions';
@@ -7,12 +8,7 @@ import locales, { NAMESPACE } from './locales';
 
 const STATUS_OPTION = locales['en-US'].status_text.name;
 
-export const data = new SlashCommandBuilder()
-  .setName(locales['en-US'].name)
-  .setDescription(locales['en-US'].description)
-  .setDescriptionLocalizations({
-    pl: locales.pl.description,
-  })
+export const data = createLocalizedCommand(locales)
   // Hide the command from regular members. The presence is process-wide, and the owner check in
   // `execute` is the actual authorisation.
   .setDefaultMemberPermissions(0)

@@ -28,16 +28,20 @@ export async function saveActivity(status: string): Promise<void> {
 
 /** Re-applies the stored status after a restart; the presence itself is not persisted by Discord. */
 export async function restoreActivity(client: Client<true>): Promise<void> {
-  const saved = await db
-    .select({ value: botSettings.value })
-    .from(botSettings)
-    .where(eq(botSettings.key, ACTIVITY_KEY))
-    .get();
+  try {
+    const saved = await db
+      .select({ value: botSettings.value })
+      .from(botSettings)
+      .where(eq(botSettings.key, ACTIVITY_KEY))
+      .get();
 
-  if (!saved) {
-    return;
+    if (!saved) {
+      return;
+    }
+
+    applyActivity(client, saved.value);
+    logger.info(`Restored the saved bot status: ${saved.value}`);
+  } catch (error) {
+    logger.error('Failed to restore activity, skipping:', error);
   }
-
-  applyActivity(client, saved.value);
-  logger.info(`Restored the saved bot status: ${saved.value}`);
 }

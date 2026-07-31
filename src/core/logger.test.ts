@@ -17,8 +17,11 @@ async function capture(emit: () => void): Promise<string> {
   logger.add(transport);
   try {
     emit();
-    // Winston transports write asynchronously.
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    // Flush deterministically instead of relying on a hardcoded timeout.
+    await new Promise<void>((resolve) => {
+      stream.once('finish', resolve);
+      stream.end();
+    });
   } finally {
     logger.remove(transport);
   }

@@ -1,22 +1,16 @@
 import {
   InteractionContextType,
   MessageFlags,
-  SlashCommandBuilder,
   TimestampStyles,
   time,
   userMention,
   type ChatInputCommandInteraction,
 } from 'discord.js';
+import { createLocalizedCommand } from '../../core/command-builder';
 import { getT } from '../../core/i18n';
 import locales, { NAMESPACE } from './locales';
 
-export const data = new SlashCommandBuilder()
-  .setName(locales['en-US'].name)
-  .setDescription(locales['en-US'].description)
-  .setDescriptionLocalizations({
-    pl: locales.pl.description,
-  })
-  .setContexts(InteractionContextType.Guild);
+export const data = createLocalizedCommand(locales).setContexts(InteractionContextType.Guild);
 
 export const execute = async (interaction: ChatInputCommandInteraction): Promise<void> => {
   const t = await getT(interaction, NAMESPACE);

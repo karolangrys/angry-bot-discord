@@ -3,8 +3,6 @@ import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 /** Per-guild settings. */
 export const guildConfigs = sqliteTable('guild_configs', {
   guildId: text('guild_id').primaryKey(),
-  /** Reserved for a future message-command feature; nothing reads it yet. */
-  prefix: text('prefix').default('!').notNull(),
   /** One of SUPPORTED_LOCALES, or null to follow the user's Discord client language. */
   language: text('language'),
 });

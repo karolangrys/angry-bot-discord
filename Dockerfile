@@ -12,9 +12,9 @@ RUN bun install --frozen-lockfile --production
 FROM base AS release
 ENV NODE_ENV=production
 
-COPY --from=install /app/node_modules ./node_modules
+COPY --from=install --chown=bun:bun /app/node_modules ./node_modules
 # The `drizzle/` folder must be part of this copy: migrations are applied at startup.
-COPY . .
+COPY --chown=bun:bun . .
 
 # The container runs as the unprivileged `bun` user, so it has to own everything it writes.
 # Previously /app was root-owned and both the SQLite database and the log files failed with EACCES.
