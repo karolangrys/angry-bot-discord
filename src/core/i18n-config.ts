@@ -22,4 +22,3 @@ export function isSupportedLocale(value: string | null | undefined): value is Su
  * key that no other locale has.
  */
 export type LocaleBundle<TStrings> = Record<SupportedLocale, TStrings>;
-

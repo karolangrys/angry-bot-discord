@@ -1,8 +1,4 @@
-import {
-  TimestampStyles,
-  time,
-  type ChatInputCommandInteraction,
-} from 'discord.js';
+import { TimestampStyles, time, type ChatInputCommandInteraction } from 'discord.js';
 import { createLocalizedCommand } from '../../core/command-builder';
 import { getT } from '../../core/i18n';
 import locales, { NAMESPACE } from './locales';

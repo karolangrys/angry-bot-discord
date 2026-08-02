@@ -53,9 +53,7 @@ describe('i18n', () => {
   });
 
   test('SUPPORTED_LOCALES matches the keys defined in core locales', async () => {
-    const coreLocaleKeys = Object.keys(
-      (await import('./locales')).default,
-    ).sort();
+    const coreLocaleKeys = Object.keys((await import('./locales')).default).sort();
     const supported = ([...SUPPORTED_LOCALES] as string[]).sort();
     expect(supported).toEqual(coreLocaleKeys);
   });
