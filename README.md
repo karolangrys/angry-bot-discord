@@ -108,8 +108,18 @@ needs to be edited.
 
 ## Production Deployment (Docker)
 
-The image is published to GHCR by CI. `docker-compose.yml` deliberately has no `build:` section,
-because only that one file is copied to the VPS.
+The image is published to GHCR by CI. `docker-compose.yml` deliberately has no `build:` section.
+Copy it manually to the VPS deployment directory — the CI pipeline verifies its presence but does
+not overwrite it.
+
+From your local machine, copy `docker-compose.yml` to the VPS:
+
+```bash
+scp docker-compose.yml user@your-vps-host:/opt/angry-bot-discord/
+
+# If using a custom SSH port or key:
+scp -P 2222 -i ~/.ssh/your_key docker-compose.yml user@your-vps-host:/opt/angry-bot-discord/
+```
 
 On the VPS, in the deployment directory:
 
@@ -148,8 +158,8 @@ Pushing a tag (e.g. `v1.0.0`) or triggering the workflow manually runs, in order
 1. **verify** — `prettier --check`, `tsc --noEmit` and `bun test`. Also runs on every pull request.
 2. **build-and-push-image** — builds and pushes to GHCR, tagged with the version, the branch, and
    the immutable `sha-<commit>`.
-3. **deploy** — copies `docker-compose.yml`, pulls the exact `sha-<commit>` image, registers the
-   slash commands, and restarts the container.
+3. **deploy** — verifies that `docker-compose.yml` and `.env` exist on the VPS, pulls the exact
+   `sha-<commit>` image, registers the slash commands, and restarts the container.
 
 The deploy job uses the `production` GitHub environment, so you can require a manual approval under
 **Settings > Environments**.

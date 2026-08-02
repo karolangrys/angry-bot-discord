@@ -96,15 +96,34 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Copy docker-compose.yml to VPS
-        uses: appleboy/scp-action@v0.1.7
+      - name: Verify VPS has required files
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           port: ${{ secrets.VPS_SSH_PORT || 22 }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: 'docker-compose.yml'
-          target: ${{ secrets.VPS_TARGET_PATH }}
+          envs: TARGET_PATH
+          script: |
+            set -eu
+            TARGET_PATH="${{ secrets.VPS_TARGET_PATH }}"
+
+            if [ ! -d "$TARGET_PATH" ]; then
+              echo "Directory $TARGET_PATH does not exist on the VPS." >&2
+              exit 1
+            fi
+
+            if [ ! -f "$TARGET_PATH/docker-compose.yml" ]; then
+              echo "Missing $TARGET_PATH/docker-compose.yml on the VPS." >&2
+              exit 1
+            fi
+
+            if [ ! -f "$TARGET_PATH/.env" ]; then
+              echo "Missing $TARGET_PATH/.env on the VPS." >&2
+              exit 1
+            fi
+
+            echo "All required files are present in $TARGET_PATH."
 
       - name: Deploy to VPS via SSH
         uses: appleboy/ssh-action@v1.0.3
