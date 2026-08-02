@@ -153,9 +153,15 @@ docker compose up -d
 
 ### Continuous deployment
 
-Pushing a tag (e.g. `v1.0.0`) or triggering the workflow manually runs, in order:
+The project uses two GitHub Actions workflows:
 
-1. **verify** — `prettier --check`, `tsc --noEmit` and `bun test`. Also runs on every pull request.
+**CI** (`ci.yml`) — runs on every pull request:
+
+- `prettier --check`, `tsc --noEmit` and `bun test`.
+
+**Build and Deploy** (`build-and-deploy.yml`) — runs on `v*` tags and `workflow_dispatch`:
+
+1. **ci** — calls the CI workflow as a reusable workflow to verify the code.
 2. **build-and-push-image** — builds and pushes to GHCR, tagged with the version, the branch, and
    the immutable `sha-<commit>`.
 3. **deploy** — verifies that `docker-compose.yml` and `.env` exist on the VPS, pulls the exact
