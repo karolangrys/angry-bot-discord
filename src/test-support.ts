@@ -1,5 +1,5 @@
 import { mock } from 'bun:test';
-import type { ChatInputCommandInteraction } from 'discord.js';
+import type { ChatInputCommandInteraction, ModalSubmitInteraction } from 'discord.js';
 
 /** User ID treated as the bot owner in tests; `test-setup.ts` publishes it via OWNER_IDS. */
 export const TEST_OWNER_ID = '100000000000000001';
@@ -8,6 +8,26 @@ export const TEST_OWNER_ID = '100000000000000001';
 export const TEST_MEMBER_ID = '200000000000000002';
 
 type ReplyPayload = string | { content?: string; flags?: number };
+
+type OptionValues = {
+  subcommand?: string;
+  group?: string | null;
+  strings?: Record<string, string>;
+  channelId?: string;
+};
+
+/**
+ * Stands in for `interaction.options`. Only the accessors the commands actually call are provided;
+ * `getSubcommandGroup` returns null by default, matching a command invoked without a group.
+ */
+export function createOptions(values: OptionValues = {}) {
+  return {
+    getSubcommand: () => values.subcommand ?? '',
+    getSubcommandGroup: () => values.group ?? null,
+    getString: (name: string) => values.strings?.[name] ?? null,
+    getChannel: () => (values.channelId ? { id: values.channelId } : null),
+  };
+}
 
 /**
  * Builds a fake interaction with recording mocks. Only the members the commands actually touch are
@@ -19,10 +39,12 @@ export function createInteraction(overrides: Record<string, unknown> = {}) {
   const followUp = mock(async (_payload: ReplyPayload) => {});
   const deferReply = mock(async () => {});
   const setActivity = mock((_options: unknown) => {});
+  const showModal = mock(async (_modal: unknown) => {});
 
   const base = {
     locale: 'en-US',
     guildId: null,
+    channelId: 'TEST_CHANNEL_ID',
     createdTimestamp: Date.now(),
     user: {
       id: TEST_MEMBER_ID,
@@ -35,10 +57,12 @@ export function createInteraction(overrides: Record<string, unknown> = {}) {
       user: { tag: 'bot#0', setActivity },
     },
     inGuild: () => false,
+    options: createOptions(),
     reply,
     editReply,
     followUp,
     deferReply,
+    showModal,
   };
 
   return {
@@ -48,6 +72,43 @@ export function createInteraction(overrides: Record<string, unknown> = {}) {
     followUp,
     deferReply,
     setActivity,
+    showModal,
+  };
+}
+
+/**
+ * Fake modal submission. Shares the reply mocks with `createInteraction`, because the code under
+ * test treats both interaction kinds the same way (see the `RepliableInteraction` widening).
+ */
+export function createModalInteraction(
+  customId: string,
+  fields: Record<string, string>,
+  overrides: Record<string, unknown> = {},
+) {
+  const reply = mock(async (_payload: ReplyPayload) => {});
+  const editReply = mock(async (_payload: ReplyPayload) => {});
+  const deferReply = mock(async (_options?: unknown) => {});
+
+  const base = {
+    customId,
+    locale: 'en-US',
+    guildId: null,
+    channelId: 'TEST_CHANNEL_ID',
+    user: { id: TEST_OWNER_ID, username: 'owner' },
+    client: { ws: { ping: 42 }, channels: { fetch: async () => null } },
+    fields: { getTextInputValue: (id: string) => fields[id] ?? '' },
+    replied: false,
+    deferred: false,
+    reply,
+    editReply,
+    deferReply,
+  };
+
+  return {
+    interaction: { ...base, ...overrides } as unknown as ModalSubmitInteraction,
+    reply,
+    editReply,
+    deferReply,
   };
 }
 

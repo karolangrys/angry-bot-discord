@@ -10,6 +10,13 @@ The project follows the **Vertical Slice Architecture** pattern.
 - **SQLite + Drizzle ORM**: A lightweight, lightning-fast database running fully locally without the need for external database engines. Migrations are applied automatically on every startup.
 - **Automated CI/CD**: GitHub Actions workflow that verifies, publishes and restarts the service on your VPS.
 - **Built-in Commands**: `/ping`, `/server-info`, `/user-info`, `/status` (bot owner), `/config language` (server admin).
+- **Scheduled JavaScript tasks**: `/js-task` lets the bot owner add a snippet plus a cron expression;
+  it is stored in SQLite and executed in a separate process, with its return value posted to a
+  channel. See [`src/features/js-task/README.md`](src/features/js-task/README.md) for how to write
+  the scripts. **Owner-only by design**: the subprocess, the scrubbed environment and the timeout
+  guard against mistakes — an infinite loop, a leak, an accidental token read — but they are not a
+  sandbox against a hostile author, so `OWNER_IDS` is the real access control. This feature also
+  makes `mem_limit` in `docker-compose.yml` mandatory rather than optional.
 
 ## Requirements
 
@@ -52,15 +59,16 @@ separate migration step for a normal run.
 
 ### Environment variables
 
-| Variable        | Required | Default       | Purpose                                                                                         |
-| --------------- | -------- | ------------- | ----------------------------------------------------------------------------------------------- |
-| `DISCORD_TOKEN` | yes      | —             | Bot token.                                                                                      |
-| `CLIENT_ID`     | yes      | —             | Application ID, used when registering commands.                                                 |
-| `TEST_GUILD_ID` | no       | —             | Register commands in this guild only (instant updates). **Must be empty in production.**        |
-| `OWNER_IDS`     | no       | —             | Comma-separated user IDs allowed to run `/status`. Falls back to the Discord application owner. |
-| `DATABASE_URL`  | no       | `sqlite.db`   | SQLite file path.                                                                               |
-| `LOG_DIR`       | no       | `logs`        | Directory for the Winston log files.                                                            |
-| `NODE_ENV`      | no       | `development` | `development` enables debug logging; `test` silences logs and file transports.                  |
+| Variable        | Required | Default         | Purpose                                                                                                                                                                                |
+| --------------- | -------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DISCORD_TOKEN` | yes      | —               | Bot token.                                                                                                                                                                             |
+| `CLIENT_ID`     | yes      | —               | Application ID, used when registering commands.                                                                                                                                        |
+| `TEST_GUILD_ID` | no       | —               | Register commands in this guild only (instant updates). **Must be empty in production.**                                                                                               |
+| `OWNER_IDS`     | no       | —               | Comma-separated user IDs allowed to run `/status`. Falls back to the Discord application owner.                                                                                        |
+| `DATABASE_URL`  | no       | `sqlite.db`     | SQLite file path.                                                                                                                                                                      |
+| `LOG_DIR`       | no       | `logs`          | Directory for the Winston log files.                                                                                                                                                   |
+| `NODE_ENV`      | no       | `development`   | `development` enables debug logging; `test` silences logs and file transports.                                                                                                         |
+| `CRON_TIMEZONE` | no       | `Europe/Warsaw` | IANA timezone the `/js-task` cron expressions are read in. Nothing sets `TZ`, so the container runs in UTC; without this a `0 9 * * *` task would fire at 11:00 Polish time in summer. |
 
 ### Changing the database schema
 

@@ -4,7 +4,8 @@ import {
   Events,
   GatewayIntentBits,
   MessageFlags,
-  type ChatInputCommandInteraction,
+  type ModalSubmitInteraction,
+  type RepliableInteraction,
 } from 'discord.js';
 import { loadCommands, type Command } from './command-handler';
 import { env } from './env-config';
@@ -48,6 +49,11 @@ export class DiscordBot {
     });
 
     this.client.on(Events.InteractionCreate, async (interaction) => {
+      if (interaction.isModalSubmit()) {
+        await this.handleModalSubmit(interaction);
+        return;
+      }
+
       if (!interaction.isChatInputCommand()) {
         return;
       }
@@ -70,6 +76,29 @@ export class DiscordBot {
     });
   }
 
+  /**
+   * Routes a modal back to the command that opened it, using the `<command name>:...` convention
+   * for `customId`. Only the first segment is inspected, so the rest is the feature's own business.
+   */
+  private async handleModalSubmit(interaction: ModalSubmitInteraction): Promise<void> {
+    const commandName = interaction.customId.split(':')[0] ?? '';
+    const command = this.commands.get(commandName);
+
+    if (!command?.handleModal) {
+      // Usually a modal left open across a restart, or a stale customId format.
+      logger.warn(`No command handles the modal "${interaction.customId}".`);
+      await this.replyWithError(interaction, 'command_unknown');
+      return;
+    }
+
+    try {
+      await command.handleModal(interaction);
+    } catch (error) {
+      logger.error(`Error handling modal ${interaction.customId}:`, error);
+      await this.replyWithError(interaction, 'command_error');
+    }
+  }
+
   private async runReadyHooks(client: Client<true>): Promise<void> {
     for (const [name, command] of this.commands) {
       if (!command.onReady) {
@@ -83,8 +112,10 @@ export class DiscordBot {
     }
   }
 
+  // Widened from ChatInputCommandInteraction so modal submissions can share this path; both shapes
+  // expose reply/followUp/replied/deferred.
   private async replyWithError(
-    interaction: ChatInputCommandInteraction,
+    interaction: RepliableInteraction,
     key: CoreErrorKey,
   ): Promise<void> {
     try {

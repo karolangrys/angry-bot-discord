@@ -1,4 +1,4 @@
-import { Team, type ChatInputCommandInteraction } from 'discord.js';
+import { Team, type RepliableInteraction } from 'discord.js';
 import { env } from './env-config';
 import { logger } from './logger';
 
@@ -10,8 +10,11 @@ import { logger } from './logger';
  *
  * Uses `OWNER_IDS` when configured, otherwise the application owner (user or team) reported by
  * Discord.
+ *
+ * Takes any repliable interaction so modal submissions can be re-checked: a `customId` is supplied
+ * by the client and is not evidence of authorisation.
  */
-export async function isBotOwner(interaction: ChatInputCommandInteraction): Promise<boolean> {
+export async function isBotOwner(interaction: RepliableInteraction): Promise<boolean> {
   if (env.OWNER_IDS.length > 0) {
     return env.OWNER_IDS.includes(interaction.user.id);
   }

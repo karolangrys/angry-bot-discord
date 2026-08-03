@@ -37,10 +37,19 @@ describe('command-handler', () => {
     const commands = await loadCommands();
     expect([...commands.keys()].sort()).toEqual([
       'config',
+      'js-task',
       'ping',
       'server-info',
       'status',
       'user-info',
     ]);
+  });
+
+  test('accepts an optional handleModal hook without requiring it', async () => {
+    const commands = await loadCommands();
+
+    // js-task opts in; everything else must still load without the hook.
+    expect(typeof commands.get('js-task')?.handleModal).toBe('function');
+    expect(commands.get('ping')?.handleModal).toBeUndefined();
   });
 });

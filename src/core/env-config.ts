@@ -21,6 +21,13 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1).default('sqlite.db'),
   LOG_DIR: z.string().min(1).default('logs'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  /**
+   * IANA timezone the cron expressions of `/js-task` are interpreted in.
+   *
+   * Needed because nothing sets `TZ`, so the container runs in UTC: without this, `0 9 * * *`
+   * would fire at 11:00 Polish time in summer and 10:00 in winter, shifting with DST.
+   */
+  CRON_TIMEZONE: z.string().min(1).default('Europe/Warsaw'),
 });
 
 const parseEnv = () => {

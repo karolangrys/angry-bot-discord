@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { ChatInputCommandInteraction } from 'discord.js';
+import type { RepliableInteraction } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import i18next, { type Resource } from 'i18next';
 import { FEATURES_PATH, listFeatureFolders } from './command-handler';
@@ -118,7 +118,11 @@ async function resolveGuildLanguage(guildId: string): Promise<SupportedLocale | 
   return language;
 }
 
-export async function getT(interaction: ChatInputCommandInteraction, namespace: string) {
+/**
+ * Accepts any repliable interaction, not just chat input commands, so modal submissions can be
+ * translated too. Only `guildId` and `locale` are read.
+ */
+export async function getT(interaction: RepliableInteraction, namespace: string) {
   const guildLanguage = interaction.guildId
     ? await resolveGuildLanguage(interaction.guildId)
     : null;

@@ -20,6 +20,15 @@ services:
       - ./logs:/app/logs
     # Give the graceful shutdown in src/core/index.ts time to close SQLite cleanly.
     stop_grace_period: 20s
+    # Required by /js-task, not optional tuning. Bun has no working per-process heap cap (measured
+    # on 1.3.14: --smol, --max-old-space-size and BUN_JSC_forceRAMSize all fail to stop a runaway
+    # allocation), so this cgroup limit is what bounds a memory bomb in a sandboxed script.
+    # Measured behaviour with this limit in place: the sandbox subprocess is OOM-killed after ~2.6s
+    # and the bot survives, because the kernel targets the largest consumer. Without the limit,
+    # nothing stops the allocation until the 10s sandbox timeout.
+    mem_limit: 512m
+    # Backstop against a script that spawns processes in a loop.
+    pids_limit: 256
     logging:
       driver: json-file
       options:

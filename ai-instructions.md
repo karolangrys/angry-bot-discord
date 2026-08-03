@@ -26,6 +26,7 @@ Ten projekt wykorzystuje środowisko **Bun**, język **TypeScript**, **Discord.j
 6. **Command Handler Pattern**:
    - Komenda (np. `ping.command.ts`) musi eksportować `data` (np. `SlashCommandBuilder`) oraz funkcję `execute(interaction)`.
    - Opcjonalnie może eksportować `onReady(client)` — uruchamiane raz po połączeniu z gatewayem (np. przywrócenie zapisanego stanu).
+   - Opcjonalnie może eksportować `handleModal(interaction)` — obsługa okienek (modali). Core routuje po **pierwszym segmencie** `customId`, który musi być nazwą komendy (`js-task:add:123`), dzięki czemu `bot.ts` nie musi wiedzieć, które feature'y używają modali. W `handleModal` **ponów sprawdzenie uprawnień** — `customId` przychodzi od klienta i nie jest dowodem autoryzacji.
    - Uprawnienia: efekty per-serwer sprawdzamy przez `interaction.memberPermissions`, ale wszystko, co działa globalnie na procesie bota (np. presence), wymaga `isBotOwner()` z `src/core/permissions.ts`.
    - Komendy działające tylko na serwerze oznaczamy `.setContexts(InteractionContextType.Guild)`.
 7. **i18n**:

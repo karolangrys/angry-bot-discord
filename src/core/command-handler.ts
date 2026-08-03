@@ -5,6 +5,7 @@ import {
   Collection,
   type ChatInputCommandInteraction,
   type Client,
+  type ModalSubmitInteraction,
   type SlashCommandBuilder,
 } from 'discord.js';
 import { logger } from './logger';
@@ -17,6 +18,13 @@ export interface Command {
    * (see `admin-status`) without core needing to know that the feature exists.
    */
   onReady?: (client: Client<true>) => Promise<void> | void;
+  /**
+   * Optional hook for modal submissions whose `customId` starts with `<command name>:`.
+   *
+   * Core routes purely on that prefix, so it never has to know which features use modals — the
+   * same arrangement as `onReady`.
+   */
+  handleModal?: (interaction: ModalSubmitInteraction) => Promise<void>;
 }
 
 /** Resolved from this file's location rather than `process.cwd()`, so the bot starts from any directory. */
@@ -44,7 +52,8 @@ function isCommand(value: unknown): value is Command {
     typeof candidate.data.name === 'string' &&
     candidate.data.name.length > 0 &&
     typeof candidate.data.toJSON === 'function' &&
-    (candidate.onReady === undefined || typeof candidate.onReady === 'function')
+    (candidate.onReady === undefined || typeof candidate.onReady === 'function') &&
+    (candidate.handleModal === undefined || typeof candidate.handleModal === 'function')
   );
 }
 

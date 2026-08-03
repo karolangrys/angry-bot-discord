@@ -17,6 +17,7 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "croner": "^10.0.1",
     "discord.js": "^14.15.3",
     "drizzle-orm": "^0.32.1",
     "i18next": "^26.3.6",
